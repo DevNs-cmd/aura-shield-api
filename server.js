@@ -107,7 +107,10 @@ app.get('/health', (req, res) => {
 
 /**
  * POST /analyze - Main analysis endpoint
- * Validates: sessionId, message (object with sender + text), source
+ * Robust endpoint compatible with any client including Agentic Honey-Pot tester
+ * 
+ * Required fields: sessionId, message (object with sender + text)
+ * Optional fields: source (defaults to "unknown" if missing)
  */
 app.post('/analyze', authenticateApiKey, async (req, res) => {
   try {
@@ -118,7 +121,7 @@ app.post('/analyze', authenticateApiKey, async (req, res) => {
     const body = req.body || {};
 
     // ========================================================================
-    // VALIDATION LAYER
+    // VALIDATION LAYER - Required Fields Only
     // ========================================================================
 
     // Validate sessionId (string, required)
@@ -126,7 +129,7 @@ app.post('/analyze', authenticateApiKey, async (req, res) => {
       console.warn('[/analyze] Validation failed: Missing sessionId');
       return res.status(400).json({
         error: 'INVALID_REQUEST_BODY',
-        message: 'Missing required field: sessionId'
+        message: 'sessionId missing'
       });
     }
 
@@ -134,7 +137,7 @@ app.post('/analyze', authenticateApiKey, async (req, res) => {
       console.warn('[/analyze] Validation failed: sessionId must be non-empty string');
       return res.status(400).json({
         error: 'INVALID_REQUEST_BODY',
-        message: 'Field sessionId must be a non-empty string'
+        message: 'sessionId must be a non-empty string'
       });
     }
 
@@ -143,7 +146,7 @@ app.post('/analyze', authenticateApiKey, async (req, res) => {
       console.warn('[/analyze] Validation failed: message must be an object');
       return res.status(400).json({
         error: 'INVALID_REQUEST_BODY',
-        message: 'Missing required field: message (must be an object)'
+        message: 'message missing or invalid (must be an object)'
       });
     }
 
@@ -152,7 +155,7 @@ app.post('/analyze', authenticateApiKey, async (req, res) => {
       console.warn('[/analyze] Validation failed: Missing message.sender');
       return res.status(400).json({
         error: 'INVALID_REQUEST_BODY',
-        message: 'Missing required field: message.sender'
+        message: 'message.sender missing'
       });
     }
 
@@ -160,7 +163,7 @@ app.post('/analyze', authenticateApiKey, async (req, res) => {
       console.warn('[/analyze] Validation failed: message.sender must be non-empty string');
       return res.status(400).json({
         error: 'INVALID_REQUEST_BODY',
-        message: 'Field message.sender must be a non-empty string'
+        message: 'message.sender must be a non-empty string'
       });
     }
 
@@ -169,7 +172,7 @@ app.post('/analyze', authenticateApiKey, async (req, res) => {
       console.warn('[/analyze] Validation failed: Missing message.text');
       return res.status(400).json({
         error: 'INVALID_REQUEST_BODY',
-        message: 'Missing required field: message.text'
+        message: 'message.text missing'
       });
     }
 
@@ -177,47 +180,36 @@ app.post('/analyze', authenticateApiKey, async (req, res) => {
       console.warn('[/analyze] Validation failed: message.text must be non-empty string');
       return res.status(400).json({
         error: 'INVALID_REQUEST_BODY',
-        message: 'Field message.text must be a non-empty string'
+        message: 'message.text must be a non-empty string'
       });
     }
 
-    // Validate source (string, required, specific values)
-    if (!body.source) {
-      console.warn('[/analyze] Validation failed: Missing source');
-      return res.status(400).json({
-        error: 'INVALID_REQUEST_BODY',
-        message: 'Missing required field: source'
-      });
-    }
+    // ========================================================================
+    // OPTIONAL FIELDS WITH SAFE DEFAULTS
+    // ========================================================================
 
-    if (typeof body.source !== 'string') {
-      console.warn('[/analyze] Validation failed: source must be a string');
-      return res.status(400).json({
-        error: 'INVALID_REQUEST_BODY',
-        message: 'Field source must be a string'
-      });
-    }
-
-    const validSources = ['sms', 'email', 'chat', 'unknown'];
-    const sourceLower = body.source.toLowerCase();
-    if (!validSources.includes(sourceLower)) {
-      console.warn(`[/analyze] Validation failed: Invalid source "${body.source}"`);
-      return res.status(400).json({
-        error: 'INVALID_REQUEST_BODY',
-        message: `Field source must be one of: ${validSources.join(', ')}`
-      });
+    // source is OPTIONAL - default to "unknown" if missing
+    let source = 'unknown';
+    if (body.source && typeof body.source === 'string') {
+      source = body.source.toLowerCase().trim();
+      // Validate against allowed sources
+      const validSources = ['sms', 'email', 'chat', 'unknown'];
+      if (!validSources.includes(source)) {
+        console.warn(`[/analyze] WARNING: Invalid source "${source}", defaulting to "unknown"`);
+        source = 'unknown';
+      }
     }
 
     // ========================================================================
     // PROCESSING
     // ========================================================================
 
-    console.log(`[/analyze] Validation passed | sessionId: ${body.sessionId} | source: ${sourceLower}`);
+    console.log(`[/analyze] Validation passed | sessionId: ${body.sessionId} | source: ${source}`);
 
     // Call analysis engine
     const analysisResult = await analyzeScamMessage(
       body.message.text.trim(),
-      sourceLower
+      source
     );
 
     if (!analysisResult) {
@@ -236,8 +228,8 @@ app.post('/analyze', authenticateApiKey, async (req, res) => {
       message: 'Request processed successfully',
       data: {
         sessionId: body.sessionId,
-        sender: body.message.sender,
-        source: sourceLower,
+        sender: body.message.sender.trim(),
+        source: source,
         timestamp: new Date().toISOString(),
         analysis: {
           is_scam: analysisResult.is_scam || false,
@@ -256,7 +248,7 @@ app.post('/analyze', authenticateApiKey, async (req, res) => {
           extracted_entities: analysisResult.extracted_entities || {
             organization: null,
             intent: 'general',
-            channel: sourceLower
+            channel: source
           },
           recommendation: analysisResult.recommendation || 'No specific recommendation'
         }
