@@ -1,12 +1,224 @@
-# AURA-SHIELD — Agentic Scam Intelligence API
+# AURA-SHIELD – Agentic Scam Intelligence API
 
-Production-grade API for scam detection and user safety, built for the India AI Impact Buildathon.
+Production-ready Node.js + Express API for detecting scam messages using advanced psychological exploitation analysis and multi-agent intelligence.
 
-## Overview
+## ✅ Features
 
-AURA-SHIELD is a state-of-the-art scam detection API that uses multi-agent intelligence to analyze suspicious messages and return actionable scam intelligence. The system employs deterministic logic to identify various types of scams including bank impersonation, lottery fraud, OTP scams, and more.
+✓ **Robust API Validation** – Comprehensive request validation with clear error messages  
+✓ **Dual Authentication** – Supports Bearer tokens and x-api-key headers  
+✓ **Production-Ready** – Error handling, graceful shutdown, comprehensive logging  
+✓ **CORS Enabled** – Cross-origin request support for web clients  
+✓ **Scam Detection** – Multi-agent analysis system for fraud identification  
+✓ **Psychological Analysis** – Detects urgency, fear, reward baiting, authority bias  
+✓ **Render Deployment** – Fully compatible with Render.com hosting  
+✓ **Fast Analysis** – ~1-2ms per message  
+✓ **Deterministic** – No randomness, fully reproducible results  
 
-## Features
+---
+
+## 🚀 Quick Start
+
+### Installation
+
+```bash
+git clone https://github.com/DevNs-cmd/aura-shield-api.git
+cd aura-shield-api
+npm install
+```
+
+### Configuration
+
+Create `.env`:
+```env
+PORT=3000
+NODE_ENV=production
+API_KEYS=sk-aura-test-key-123
+```
+
+### Run
+
+```bash
+npm start
+```
+
+---
+
+## 📋 API Endpoints
+
+### GET /health
+
+Health check endpoint.
+
+```bash
+curl -X GET http://localhost:3000/health
+```
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "service": "AuraShield API",
+  "version": "1.0.0",
+  "timestamp": "2026-02-04T14:26:53.344Z"
+}
+```
+
+---
+
+### POST /analyze
+
+Analyzes a message for scam indicators.
+
+**Authentication:** 
+- `Authorization: Bearer sk-aura-test-key-123`  
+- OR `x-api-key: sk-aura-test-key-123`
+
+**Request:**
+```json
+{
+  "sessionId": "sess_12345",
+  "message": {
+    "sender": "+1234567890",
+    "text": "Your account suspended verify immediately click link"
+  },
+  "source": "sms"
+}
+```
+
+**Response:**
+```json
+{
+  "status": "success",
+  "message": "Request processed successfully",
+  "data": {
+    "sessionId": "sess_12345",
+    "sender": "+1234567890",
+    "source": "sms",
+    "timestamp": "2026-02-04T14:27:09.366Z",
+    "analysis": {
+      "is_scam": true,
+      "confidence_score": 0.95,
+      "scam_type": "bank_impersonation",
+      "risk_level": "high",
+      "cognitive_exploitation": {
+        "urgency": 0.15,
+        "fear": 0.30,
+        "reward_bait": 0.0,
+        "authority_bias": 0.0
+      },
+      "reasoning": [
+        "Detected scam pattern: bank impersonation",
+        "Suspicious intent detected: otp_theft, link_click"
+      ],
+      "extracted_entities": {
+        "organization": null,
+        "intent": "verification_request",
+        "channel": "sms"
+      },
+      "recommendation": "Exercise extreme caution. Do not share personal information or click links."
+    }
+  }
+}
+```
+
+---
+
+## 🔐 Error Responses
+
+**Missing Field (400):**
+```json
+{
+  "error": "INVALID_REQUEST_BODY",
+  "message": "Missing required field: sessionId"
+}
+```
+
+**Missing Auth (401):**
+```json
+{
+  "error": "UNAUTHORIZED",
+  "message": "Missing API key. Use Authorization: Bearer <key> or x-api-key: <key>"
+}
+```
+
+**Invalid Auth (403):**
+```json
+{
+  "error": "FORBIDDEN",
+  "message": "Invalid API key"
+}
+```
+
+**Server Error (500):**
+```json
+{
+  "error": "INTERNAL_SERVER_ERROR",
+  "message": "An unexpected error occurred during processing. Please try again."
+}
+```
+
+---
+
+## 🧪 Testing
+
+### Using curl
+```bash
+curl -X POST http://localhost:3000/analyze \
+  -H "Authorization: Bearer sk-aura-test-key-123" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "sessionId": "sess_001",
+    "message": {
+      "sender": "+919876543210",
+      "text": "Your account suspended verify immediately click link"
+    },
+    "source": "sms"
+  }'
+```
+
+### Using PowerShell
+```powershell
+$headers = @{ 'x-api-key' = 'sk-aura-test-key-123' }
+$body = @{
+  'sessionId' = 'sess_001'
+  'message' = @{ 'sender' = '+919876543210'; 'text' = 'Account suspended click link' }
+  'source' = 'sms'
+} | ConvertTo-Json
+
+Invoke-WebRequest -Uri http://localhost:3000/analyze -Method POST `
+  -Headers $headers -Body $body -ContentType application/json
+```
+
+---
+
+## 🌐 Render Deployment
+
+1. Connect GitHub repo to Render
+2. Add environment variables:
+   ```
+   PORT=10000
+   NODE_ENV=production
+   API_KEYS=sk-aura-test-key-123
+   ```
+3. Render auto-deploys via `npm install` + `npm start`
+4. Access: `https://your-service.onrender.com/health`
+
+---
+
+## 📊 Scam Detection Scoring
+
+- **Strong Indicators**: 0.75–0.95 (high risk)
+- **Medium Risk**: 0.40–0.65
+- **Benign**: < 0.30
+- **Max Score**: 0.95 (capped)
+
+### High-Boost Phrases
+- "account suspended"
+- "verify immediately"
+- "click link"
+- "limited time"
+- "kyc blocked"
+- "otp required"
 
 - **Multi-Agent Intelligence**: Uses Intent Agent, Psychological Exploit Agent, Context Agent, and Risk Aggregator
 - **Real-time Analysis**: Fast, deterministic analysis without heavy ML inference
