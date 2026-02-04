@@ -71,6 +71,16 @@ const PSYCHOLOGICAL_INDICATORS = {
   ]
 };
 
+// Specific high-weight boost phrases to increase confidence deterministically
+const BOOST_PHRASES = [
+  'account suspended',
+  'verify immediately',
+  'click link',
+  'limited time',
+  'kyc blocked',
+  'otp required'
+];
+
 /**
  * Intent Detection Agent
  * Detects the primary goal/intent of the message
@@ -274,50 +284,66 @@ function classifyScamType(message) {
  * Risk Aggregation Agent
  * Combines all signals to determine final risk level and confidence
  */
-function aggregateRisk(scamTypeInfo, psychologicalScores, intentInfo) {
-  // Base confidence from scam type classification
-  let baseConfidence = scamTypeInfo.confidence;
-  
-  // Boost confidence based on psychological manipulation
-  const psychologicalSum = 
-    psychologicalScores.urgency + 
-    psychologicalScores.fear + 
-    psychologicalScores.reward_bait + 
-    psychologicalScores.authority_bias;
-  
-  // Boost based on intent indicators
-  const intentSum = Object.values(intentInfo).reduce((sum, val) => sum + val, 0);
-  
-  // Calculate final confidence score
-  let confidenceScore = baseConfidence;
-  
-  if (psychologicalSum > 0.5) {
-    confidenceScore += psychologicalSum * 0.3;
-  }
-  
-  if (intentSum > 1.0) {
-    confidenceScore += intentSum * 0.1;
-  }
-  
-  // Cap at 1.0
-  confidenceScore = Math.min(1.0, confidenceScore);
-  confidenceScore = parseFloat(confidenceScore.toFixed(2));
-  
-  // Determine risk level based on confidence and psychological factors
+function aggregateRisk(scamTypeInfo, psychologicalScores, intentInfo, contextInfo, message) {
+  // Compute raw signals
+  const baseConfidence = scamTypeInfo.confidence || 0;
+  const psychologicalSum =
+    (psychologicalScores.urgency || 0) +
+    (psychologicalScores.fear || 0) +
+    (psychologicalScores.reward_bait || 0) +
+    (psychologicalScores.authority_bias || 0);
+  const intentSum = Object.values(intentInfo || {}).reduce((sum, val) => sum + (val || 0), 0);
+
+  // Count boost phrases deterministically
+  const lowerMsg = (message || '').toLowerCase();
+  let boostCount = 0;
+  BOOST_PHRASES.forEach(p => { if (lowerMsg.includes(p)) boostCount += 1; });
+
+  // Incorporate boosts into a raw score (bounded 0-1)
+  let rawScore = baseConfidence;
+  rawScore += Math.min(1.0, psychologicalSum * 0.15); // moderate factor
+  rawScore += Math.min(1.0, intentSum * 0.05);
+  rawScore += Math.min(0.6, boostCount * 0.12); // each boost adds deterministic bump
+  rawScore = Math.min(1.0, rawScore);
+
+  // Determine strong / medium / low indicator flags
+  const impersonation = !!(contextInfo && contextInfo.organization);
+  const strongIndicators = (
+    (psychologicalScores.urgency >= 0.5 && psychologicalScores.fear >= 0.5 && psychologicalScores.authority_bias >= 0.5)
+    || (boostCount >= 2)
+    || (impersonation && (psychologicalSum >= 0.6 || baseConfidence >= 0.4))
+  );
+
+  const mediumIndicators = (!strongIndicators) && (rawScore >= 0.25 || psychologicalSum >= 0.3 || baseConfidence >= 0.2);
+
+  // Map rawScore into calibrated output ranges as required (deterministic scaling)
+  let confidenceScore = 0;
   let riskLevel = 'low';
-  
-  if (confidenceScore >= 0.8 || psychologicalSum >= 0.7) {
-    riskLevel = 'critical';
-  } else if (confidenceScore >= 0.6 || psychologicalSum >= 0.5) {
+
+  if (strongIndicators) {
+    // Map into [0.75, 0.95]
+    confidenceScore = 0.75 + rawScore * (0.95 - 0.75);
     riskLevel = 'high';
-  } else if (confidenceScore >= 0.4 || psychologicalSum >= 0.3) {
+  } else if (mediumIndicators) {
+    // Map into [0.4, 0.65]
+    // Normalize rawScore to 0..1 using a conservative divisor
+    const norm = Math.min(1.0, rawScore / 0.9);
+    confidenceScore = 0.4 + norm * (0.65 - 0.4);
     riskLevel = 'medium';
+  } else {
+    // Benign: keep below 0.3
+    confidenceScore = Math.min(0.29, rawScore * 0.29);
+    riskLevel = 'low';
   }
-  
+
+  // Final caps and formatting
+  confidenceScore = Math.min(0.95, confidenceScore);
+  confidenceScore = parseFloat(confidenceScore.toFixed(2));
+
   return {
     confidence_score: confidenceScore,
     risk_level: riskLevel,
-    is_scam: scamTypeInfo.type !== SCAM_TYPES.NON_SCAM
+    is_scam: riskLevel !== 'low'
   };
 }
 
@@ -378,9 +404,9 @@ async function analyzeScamMessage(message, source) {
     
     // Agent 4: Scam Type Classification
     const scamTypeInfo = classifyScamType(message);
-    
-    // Agent 5: Risk Aggregation
-    const riskInfo = aggregateRisk(scamTypeInfo, psychologicalScores, intentInfo);
+
+    // Agent 5: Risk Aggregation (pass context and message for boosts/impersonation)
+    const riskInfo = aggregateRisk(scamTypeInfo, psychologicalScores, intentInfo, contextInfo, message);
     
     // Generate reasoning
     const reasoning = generateReasoning(

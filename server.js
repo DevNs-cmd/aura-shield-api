@@ -9,7 +9,10 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
 // In-memory API keys store (in production, use a secure database)
-const API_KEYS = process.env.API_KEYS ? process.env.API_KEYS.split(',') : [];
+// Read keys from env, split by comma and trim whitespace
+const API_KEYS = process.env.API_KEYS
+  ? process.env.API_KEYS.split(',').map(k => k.trim()).filter(Boolean)
+  : [];
 
 /**
  * Authentication middleware to validate API key
@@ -43,9 +46,11 @@ const { analyzeScamMessage } = require('./scamAnalyzer');
  * Health check endpoint
  */
 app.get('/health', (req, res) => {
-  // Health endpoint: returns minimal status for evaluator
-  res.status(200).json({ 
-    status: 'ok'
+  // Health endpoint for evaluator: exact JSON contract
+  res.status(200).json({
+    status: 'ok',
+    service: 'AuraShield API',
+    version: '1.0.0'
   });
 });
 
@@ -55,9 +60,11 @@ app.get('/health', (req, res) => {
  */
 app.post('/analyze', authenticateApiKey, async (req, res) => {
   try {
-    const { message, source } = req.body;
+    // Accept either `message` or `text` per input flexibility requirement
+    const source = req.body.source;
+    const message = req.body.message || req.body.text || null;
 
-    // Validate required fields
+    // Validate required fields (preserve existing validation behavior)
     if (!message) {
       return res.status(400).json({
         error: 'Bad Request: Missing required field "message"',
