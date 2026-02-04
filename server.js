@@ -29,19 +29,29 @@ const API_KEYS = process.env.API_KEYS
 
 /**
  * Authentication middleware to validate API key
+ * Supports both Bearer token and x-api-key header
  */
 const authenticateApiKey = (req, res, next) => {
-  const authHeader = req.headers.authorization;
+  let apiKey = null;
   
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  // Check for Bearer token in Authorization header
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    apiKey = authHeader.substring(7); // Remove 'Bearer ' prefix
+  }
+  
+  // Check for x-api-key header as fallback
+  if (!apiKey && req.headers['x-api-key']) {
+    apiKey = req.headers['x-api-key'];
+  }
+  
+  if (!apiKey) {
     return res.status(401).json({
       error: 'Unauthorized: Missing or invalid Authorization header',
       code: 'MISSING_AUTH_HEADER'
     });
   }
 
-  const apiKey = authHeader.substring(7); // Remove 'Bearer ' prefix
-  
   if (!API_KEYS.includes(apiKey)) {
     return res.status(403).json({
       error: 'Forbidden: Invalid API key',
@@ -59,6 +69,7 @@ const { analyzeScamMessage } = require('./scamAnalyzer');
  * Health check endpoint
  */
 app.get('/health', (req, res) => {
+  console.log('[/health] Received GET request');
   // Health endpoint for evaluator: exact JSON contract
   res.status(200).json({
     status: 'ok',
@@ -73,12 +84,15 @@ app.get('/health', (req, res) => {
  */
 app.post('/analyze', authenticateApiKey, async (req, res) => {
   try {
+    console.log(`[/analyze] Received POST request | Body:`, JSON.stringify(req.body).substring(0, 100));
+    
     // Accept either `message` or `text` per input flexibility requirement
     const source = req.body.source;
     const message = req.body.message || req.body.text || null;
 
     // Validate required fields (preserve existing validation behavior)
     if (!message) {
+      console.warn(`[/analyze] Missing message field`);
       return res.status(400).json({
         error: 'Bad Request: Missing required field "message"',
         code: 'MISSING_MESSAGE_FIELD'
@@ -86,6 +100,7 @@ app.post('/analyze', authenticateApiKey, async (req, res) => {
     }
 
     if (!source) {
+      console.warn(`[/analyze] Missing source field`);
       return res.status(400).json({
         error: 'Bad Request: Missing required field "source"',
         code: 'MISSING_SOURCE_FIELD'
@@ -95,6 +110,7 @@ app.post('/analyze', authenticateApiKey, async (req, res) => {
     // Validate source field
     const validSources = ['sms', 'email', 'chat', 'unknown'];
     if (!validSources.includes(source)) {
+      console.warn(`[/analyze] Invalid source: ${source}`);
       return res.status(400).json({
         error: 'Bad Request: Invalid source value',
         code: 'INVALID_SOURCE_VALUE'
@@ -103,10 +119,11 @@ app.post('/analyze', authenticateApiKey, async (req, res) => {
 
     // Analyze the message - guaranteed to return complete JSON contract
     const result = await analyzeScamMessage(message, source);
+    console.log(`[/analyze] Analysis complete | is_scam: ${result.is_scam} | confidence: ${result.confidence_score}`);
 
     res.status(200).json(result);
   } catch (error) {
-    console.error('Analysis error:', error);
+    console.error('[/analyze] Analysis error:', error);
     // Critical: Return complete JSON contract even on server error
     res.status(500).json({
       is_scam: false,
@@ -157,9 +174,17 @@ app.use('*', (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`AURA-SHIELD server running on port ${PORT}`);
-  console.log(`Health endpoint: http://localhost:${PORT}/health`);
-  console.log(`Analysis endpoint: http://localhost:${PORT}/analyze`);
+  console.log(`\n=== AURA-SHIELD API Server ===`);
+  console.log(`✓ Server running on port ${PORT}`);
+  console.log(`✓ Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`✓ API Keys configured: ${API_KEYS.length > 0 ? 'Yes' : 'No'}`);
+  console.log(`\nEndpoints:`);
+  console.log(`  GET  http://localhost:${PORT}/health`);
+  console.log(`  POST http://localhost:${PORT}/analyze`);
+  console.log(`\nAuth Headers Supported:`);
+  console.log(`  - Authorization: Bearer <api-key>`);
+  console.log(`  - x-api-key: <api-key>`);
+  console.log(`============================\n`);
 });
 
 module.exports = app;
