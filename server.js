@@ -6,7 +6,20 @@ const app = express();
 
 // Middleware
 app.use(cors());
+
+// JSON parser with explicit error handling for malformed JSON
 app.use(express.json({ limit: '10mb' }));
+
+// Catch JSON parsing errors
+app.use((err, req, res, next) => {
+  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+    return res.status(400).json({
+      error: 'Bad Request: Invalid JSON in request body',
+      code: 'INVALID_REQUEST_BODY'
+    });
+  }
+  next(err);
+});
 
 // In-memory API keys store (in production, use a secure database)
 // Read keys from env, split by comma and trim whitespace
@@ -119,9 +132,15 @@ app.post('/analyze', authenticateApiKey, async (req, res) => {
   }
 });
 
-// Error handling middleware
+// Error handling middleware (catches all errors passed via next(err))
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err);
+  
+  // Ensure all error responses are JSON
+  if (res.headersSent) {
+    return next(err);
+  }
+  
   res.status(500).json({
     error: 'Internal Server Error',
     code: 'UNHANDLED_ERROR'
