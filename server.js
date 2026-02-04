@@ -79,79 +79,133 @@ app.get('/health', (req, res) => {
 });
 
 /**
- * Main analysis endpoint
- * Evaluator note: Always returns complete JSON contract
+ * Main analysis endpoint - Refactored for robust validation
+ * Validates sessionId, message object (sender + text), and source
  */
 app.post('/analyze', authenticateApiKey, async (req, res) => {
   try {
-    console.log(`[/analyze] Received POST request | Body:`, JSON.stringify(req.body).substring(0, 100));
+    console.log(`[/analyze] Received POST request | Body:`, JSON.stringify(req.body).substring(0, 150));
     
-    // Accept either `message` or `text` per input flexibility requirement
-    const source = (req.body && req.body.source) || 'unknown';
-    const message = (req.body && (req.body.message || req.body.text)) || null;
+    const body = req.body || {};
 
-    // If no message provided, return a default safe analysis (for tester compatibility)
-    if (!message) {
-      console.warn(`[/analyze] No message field provided, returning default benign analysis`);
-      return res.status(200).json({
-        is_scam: false,
-        confidence_score: 0.0,
-        scam_type: 'non_scam',
-        risk_level: 'low',
-        cognitive_exploitation: {
-          urgency: 0.0,
-          fear: 0.0,
-          reward_bait: 0.0,
-          authority_bias: 0.0
-        },
-        reasoning: ['No message provided for analysis'],
-        extracted_entities: {
-          organization: null,
-          intent: 'general',
-          channel: source || 'unknown'
-        },
-        recommendation: 'Provide a message for scam analysis'
-      });
-    }
-
-    // Validate source field if provided
-    const validSources = ['sms', 'email', 'chat', 'unknown'];
-    if (source && !validSources.includes(source)) {
-      console.warn(`[/analyze] Invalid source: ${source}`);
+    // Validation: sessionId (string)
+    if (!body.sessionId) {
+      console.warn(`[/analyze] Validation failed: Missing sessionId`);
       return res.status(400).json({
-        error: 'Bad Request: Invalid source value',
-        code: 'INVALID_SOURCE_VALUE'
+        error: 'INVALID_REQUEST_BODY',
+        message: 'Missing required field: sessionId'
       });
     }
 
-    // Analyze the message - guaranteed to return complete JSON contract
-    const result = await analyzeScamMessage(message, source);
-    console.log(`[/analyze] Analysis complete | is_scam: ${result.is_scam} | confidence: ${result.confidence_score}`);
+    if (typeof body.sessionId !== 'string') {
+      console.warn(`[/analyze] Validation failed: sessionId is not a string`);
+      return res.status(400).json({
+        error: 'INVALID_REQUEST_BODY',
+        message: 'Invalid field: sessionId must be a string'
+      });
+    }
 
-    res.status(200).json(result);
+    // Validation: message object with sender and text
+    if (!body.message) {
+      console.warn(`[/analyze] Validation failed: Missing message object`);
+      return res.status(400).json({
+        error: 'INVALID_REQUEST_BODY',
+        message: 'Missing required field: message'
+      });
+    }
+
+    if (typeof body.message !== 'object' || Array.isArray(body.message)) {
+      console.warn(`[/analyze] Validation failed: message is not an object`);
+      return res.status(400).json({
+        error: 'INVALID_REQUEST_BODY',
+        message: 'Invalid field: message must be an object'
+      });
+    }
+
+    if (!body.message.sender) {
+      console.warn(`[/analyze] Validation failed: Missing message.sender`);
+      return res.status(400).json({
+        error: 'INVALID_REQUEST_BODY',
+        message: 'Missing required field: message.sender'
+      });
+    }
+
+    if (typeof body.message.sender !== 'string') {
+      console.warn(`[/analyze] Validation failed: message.sender is not a string`);
+      return res.status(400).json({
+        error: 'INVALID_REQUEST_BODY',
+        message: 'Invalid field: message.sender must be a string'
+      });
+    }
+
+    if (!body.message.text) {
+      console.warn(`[/analyze] Validation failed: Missing message.text`);
+      return res.status(400).json({
+        error: 'INVALID_REQUEST_BODY',
+        message: 'Missing required field: message.text'
+      });
+    }
+
+    if (typeof body.message.text !== 'string') {
+      console.warn(`[/analyze] Validation failed: message.text is not a string`);
+      return res.status(400).json({
+        error: 'INVALID_REQUEST_BODY',
+        message: 'Invalid field: message.text must be a string'
+      });
+    }
+
+    // Validation: source (string)
+    if (!body.source) {
+      console.warn(`[/analyze] Validation failed: Missing source`);
+      return res.status(400).json({
+        error: 'INVALID_REQUEST_BODY',
+        message: 'Missing required field: source'
+      });
+    }
+
+    if (typeof body.source !== 'string') {
+      console.warn(`[/analyze] Validation failed: source is not a string`);
+      return res.status(400).json({
+        error: 'INVALID_REQUEST_BODY',
+        message: 'Invalid field: source must be a string'
+      });
+    }
+
+    // Validate source against allowed values
+    const validSources = ['sms', 'email', 'chat', 'unknown'];
+    if (!validSources.includes(body.source)) {
+      console.warn(`[/analyze] Validation failed: Invalid source value: ${body.source}`);
+      return res.status(400).json({
+        error: 'INVALID_REQUEST_BODY',
+        message: `Invalid field: source must be one of ${validSources.join(', ')}`
+      });
+    }
+
+    // All validations passed - perform scam analysis
+    console.log(`[/analyze] Validation passed | sessionId: ${body.sessionId} | source: ${body.source}`);
+    
+    const analysisResult = await analyzeScamMessage(body.message.text, body.source);
+    
+    console.log(`[/analyze] Analysis complete | is_scam: ${analysisResult.is_scam} | confidence: ${analysisResult.confidence_score}`);
+
+    // Return success response with analysis data
+    res.status(200).json({
+      status: 'success',
+      message: 'Request processed',
+      data: {
+        sessionId: body.sessionId,
+        sender: body.message.sender,
+        source: body.source,
+        analysis: analysisResult
+      }
+    });
+
   } catch (error) {
-    console.error('[/analyze] Analysis error:', error);
-    // Critical: Return complete JSON contract even on server error
+    console.error('[/analyze] Unexpected error:', error);
+    // Return error response with proper structure
     res.status(500).json({
-      is_scam: false,
-      confidence_score: 0.00,
-      scam_type: 'non_scam',
-      risk_level: 'low',
-      cognitive_exploitation: {
-        urgency: 0.00,
-        fear: 0.00,
-        reward_bait: 0.00,
-        authority_bias: 0.00
-      },
-      reasoning: ['Server error occurred during analysis'],
-      extracted_entities: {
-        organization: null,
-        intent: 'general',
-        channel: 'unknown'
-      },
-      recommendation: 'Server error occurred during analysis, treating as non-scam for safety',
-      error: 'Internal Server Error',
-      code: 'ANALYSIS_ERROR'
+      error: 'INTERNAL_SERVER_ERROR',
+      message: 'An unexpected error occurred during processing'
     });
   }
 });
